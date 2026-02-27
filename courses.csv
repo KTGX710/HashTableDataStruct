@@ -1,0 +1,15 @@
+CSCI101,Introduction to Computer Science,CSCI100
+CSCI102,Data Structures and Algorithms,CSCI101
+CSCI201,Computer Architecture,CSCI102
+CSCI301,Software Engineering,CSCI201
+CSCI302,Database Systems,CSCI201
+CSCI401,Operating Systems,CSCI301
+CSCI402,Network Security,CSCI401
+MATH101,Calculus I,MATH100
+MATH102,Calculus II,MATH101
+MATH201,Linear Algebra,MATH102
+MATH301,Differential Equations,MATH201
+MATH401,Advanced Mathematics,MATH301
+CSCI501,Machine Learning,CSCI402
+CSCI502,Artificial Intelligence,CSCI501
+MATH501,Statistics and Probability,MATH401

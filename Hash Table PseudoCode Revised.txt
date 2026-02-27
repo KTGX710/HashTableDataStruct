@@ -1,0 +1,845 @@
+// Object to store Course information
+Struct Course {
+    courseName: String
+    courseTitle: String
+    coursePrerequisites: List<String>
+
+    // Constructor
+    Course(name: String, title: String, prereqs: List<String>) {
+        SET courseName to name
+        SET courseTitle to title
+        SET coursePrerequisites to prereqs
+    }
+
+    // Formats and returns Course info as a string
+    toString: String {
+        IF coursePrerequisites is empty THEN
+            SET prereqs to "None"
+        ELSE
+            SET prereqs to empty String
+
+            FOR each req in coursePrerequisites
+                APPEND req.toString() to prereqs
+
+                IF req is not last in coursePrerequisites THEN
+                    APPEND ", " to prereqs
+                END IF
+            END FOR
+        END IF
+
+        RETURN courseName + ": " + courseTitle + "; Prerequisites: " + prereqs
+    }
+}
+
+
+// Object that stores Course object and ADT metadata
+Struct DataNode {
+    course: Course
+    nextNode: DataNode
+
+    // Constructor
+    DataNode(course: Course) {
+        SET this.course to course
+        SET this.nextNode to null
+    }
+}
+
+
+// Class to validate input from parser and build Course objects
+Class CourseBuilder {
+
+    //* Validation Methods
+
+    // Validate that String follows schema: ABCD123
+    courseNameValidator(courseName: String): Bool {
+        IF courseName is null THEN
+            RETURN False
+        END IF
+
+        IF length of courseName is equal to 7 THEN
+            IF first 4 characters of courseName are alphabetic AND last 3 characters of courseName are numeric THEN
+                RETURN True
+            END IF
+        END IF
+
+        RETURN False
+    }
+
+
+    // Validates that String is not null, empty, or contains escape characters
+    courseDataValidator(data: String): Bool {
+        IF data is null OR data is empty THEN
+            RETURN False
+        END IF
+
+        FOR each character in data
+            IF character is an escape character THEN
+                RETURN False
+            END IF
+        END FOR
+
+        RETURN True
+    }
+
+
+    //* Formatting Methods
+
+    // Trim front and tail end whitespace
+    trim(input: String): String {
+        // Check if input is null or empty
+        IF input is null OR input is empty THEN
+            RETURN input
+        END IF
+
+        // Initialize tracking variables
+        SET start to 0
+        SET end to length of input minus 1
+
+        // Move start forward past leading whitespace
+        WHILE start is less than length of input AND input[start] is whitespace
+            INCREMENT start
+        END WHILE
+
+        // If entire string was whitespace
+        IF start is equal to length of input THEN
+            RETURN empty string
+        END IF
+
+        // Move end backward past trailing whitespace
+        WHILE end is greater than or equal to start AND input[end] is whitespace
+            DECREMENT end
+        END WHILE
+
+        RETURN input[start, end] // inclusive
+    }
+
+
+    // Remove quotation marks and escape characters
+    filter(input: String): String {
+        IF input is null THEN
+            RETURN empty string
+        END IF
+
+        SET output to empty String
+        SET invalidChar to quotation mark and language specific escape characters
+
+        FOR each character in input
+            IF character is not found in invalidChar THEN
+                APPEND character to output
+            END IF
+        END FOR
+
+        RETURN output
+    }
+
+    //* Builder Methods
+
+    // Builds Course object using validator and constructor
+    builder(input: List<String>): Course {
+
+        IF input is null OR input is empty THEN
+            RETURN null
+        END IF
+
+        // Defensive copy
+        SET courseData to new empty List<String>
+
+        FOR each item in input
+            APPEND trim(filter(item)) to courseData
+        END FOR
+
+        // Need at least name and title
+        IF length of courseData is less than 2 THEN
+            RETURN null
+        END IF
+
+        // Validate Course Name
+        IF courseNameValidator(courseData[0]) returns True THEN
+            SET courseName to courseData[0]
+        ELSE
+            RETURN null
+        END IF
+
+        // Validate Course Title
+        IF courseDataValidator(courseData[1]) returns True THEN
+            SET courseTitle to courseData[1]
+        ELSE
+            RETURN null
+        END IF
+
+        // Establish prerequisites list
+        SET coursePrereq to new empty List<String>
+
+        // Check if prerequisite data exists in input
+        IF length of input is greater than 2 THEN
+            // Build prerequisites list
+            SET i to 2
+
+            // Iterate through remainder of list and build prerequisite list
+            WHILE i is less than length of courseData
+                SET tempCourse to courseData[i]
+
+                IF courseNameValidator(tempCourse) returns True THEN
+                    APPEND tempCourse to coursePrereq
+                END IF
+
+                INCREMENT i
+            END WHILE
+        END IF
+
+        SET newCourse to Course(courseName, courseTitle, coursePrereq)
+
+        RETURN newCourse
+    }
+}
+
+
+// Hash Table data structure to store Course nodes using chaining (linked list per bucket)
+Class DataStructure {
+    // Attributes
+    INIT buckets: List<DataNode>    // Each bucket is a singly linked list head (chaining)
+    INIT capacity: Integer          // Total number of buckets (array size)
+    INIT size: Integer              // Current number of stored courses
+    INIT sortedCourses: List<Course>    // Cached list of courses sorted alphabetically
+    SET LOAD_FACTOR_THRESHOLD to 0.75  // When size/capacity > 0.75, resize to avoid collisions
+
+    // Constructor: Initialize hash table with default capacity
+    DataStructure() {
+        // Set initial capacity to a power of 2 for hash distribution
+        SET capacity to 1024
+
+        // Initialize size to 0
+        SET size to 0
+
+        // Create an array of buckets, each initialized to null (empty linked list)
+        INIT buckets(capacity)
+    }
+
+    // Overloaded Constructor: Allows custom capacity
+    DataStructure(capacity: Integer) {
+        // Validate capacity is reasonable (minimum 16 to avoid tiny tables)
+        IF capacity < 16 THEN
+            PRINT "Warning: Capacity too small. Setting to 16."
+            SET this.capacity to 16
+        ELSE
+            SET this.capacity to capacity
+        END IF
+
+        // Reset size to 0
+        SET size to 0
+
+        // Initialize buckets array with given capacity
+        INIT buckets(capacity)
+    }
+
+    // Destructor: Clean up all allocated memory (linked list nodes)
+    destroy() {
+        // Loop through each bucket
+        FOR index from 0 to (capacity - 1)
+            // Start at the head of the linked list in this bucket
+            SET currentNode to buckets[index]
+
+            // Traverse the entire chain until null
+            WHILE currentNode is not null
+                // Save next node before deleting current
+                SET next to currentNode.nextNode
+
+                // Delete the current node (free memory)
+                DELETE currentNode
+
+                // Move to next node in chain
+                SET currentNode to next
+            END WHILE
+        END FOR
+
+        // Reset size and capacity to 0 (safe cleanup)
+        SET size to 0
+        SET capacity to 0
+    }
+
+    // Hash Function: Compute index for a course name using polynomial rolling hash
+    hash(key: String): Integer {
+        // Initialize hash value to 0
+        SET hash to 0
+
+        // Use base 31 (common in hash functions for good distribution)
+        SET base to 31
+
+        // Iterate through each character in the course name
+        FOR each character in key
+            // Update hash
+            hash = (hash * base + ASCII(character)) % capacity
+        END FOR
+
+        // Return index
+        RETURN hash
+    }
+
+    // Resize: Expand the hash table when load factor exceeds threshold
+    resize() {
+        // Save old capacity and old buckets for rehashing
+        SET oldCapacity to capacity
+        SET oldBuckets to buckets
+
+        // Double the capacity
+        SET capacity to capacity * 2
+
+        // Create a new buckets array with doubled size
+        INIT newBuckets(capacity)
+
+        // Rehash all existing nodes into new buckets
+        FOR index from 0 to (oldCapacity - 1)
+            // Start at head of old bucket's chain
+            SET currentNode to oldBuckets[index]
+
+            // Traverse entire chain
+            WHILE currentNode is not null
+                // Save next node before modifying pointers
+                SET nextNode to currentNode.nextNode
+
+                // Compute new index using updated capacity
+                SET newIndex to hash(currentNode.course.courseName)
+
+                // Insert node at head of newBuckets[newIndex] (chaining)
+                SET currentNode.nextNode to newBuckets[newIndex]
+                SET newBuckets[newIndex] to currentNode
+
+                // Move to next node in old chain
+                SET currentNode to nextNode
+            END WHILE
+        END FOR
+
+        // Replace old buckets with new buckets
+        SET buckets to newBuckets
+    }
+
+    // Insert: Add a new course to the hash table (with duplicate check)
+    insert(course: Course) {
+        // Validate input: cannot insert null course
+        IF course is null THEN
+            PRINT "Unable to insert empty course!"
+            RETURN
+        END IF
+
+        // Extract course name as key for hashing
+        SET key to course.courseName
+
+        // Compute bucket index using hash function
+        SET index to hash(key)
+
+        // Check for duplicate course in the chain (only in this bucket)
+        SET currentNode to buckets[index]
+
+        WHILE currentNode is not null
+            // Compare course names
+            IF currentNode.course.courseName equals key THEN
+                PRINT "Duplicate course: " + key
+                RETURN  // Exit insert
+            END IF
+
+            SET currentNode to currentNode.nextNode
+        END WHILE
+
+        // Create a new DataNode to store the course
+        SET newNode to DataNode(course)
+
+        // Insert at head of chain
+        SET newNode.nextNode to buckets[index]
+        SET buckets[index] to newNode
+
+        // Increment size (track number of courses)
+        INCREMENT size
+
+        // Check if load factor exceeds threshold, resize if necessary
+        IF (size / capacity) > LOAD_FACTOR_THRESHOLD THEN
+            CALL resize()
+        END IF
+
+        // Call sort() to ensure cached list is updated
+        CALL sort()
+    }
+
+    // Inject: Replace the entire hash table with a new one built from a list of courses
+    inject(newCourses: List<Course>) {
+        // Validate input
+        IF newCourses is null OR empty THEN
+            PRINT "Warning: Empty or null course list. No change made."
+            RETURN
+        END IF
+
+        // Destroy current hash table
+        CALL destroy()
+
+        // Set new capacity (start with 1024, or scale based on size)
+        SET capacity to 1024
+        IF newCourses.size() > 1024 THEN
+            SET capacity to newCourses.size() * 2  // Ensure room for all courses
+        END IF
+
+        // Reinitialize buckets
+        INIT buckets(capacity)
+        SET size to 0
+
+        // Insert each course from newCourses list into the new hash table
+        FOR each course in newCourses
+            IF course is null THEN
+                PRINT "Skipping null course."
+                CONTINUE
+            END IF
+
+            SET key to course.courseName
+            SET index to hash(key)
+
+            // Check for duplicate in the chain
+            SET currentNode to buckets[index]
+            WHILE currentNode is not null
+                IF currentNode.course.courseName equals key THEN
+                    PRINT "Duplicate course: " + key + " ; skipping"
+                    CONTINUE  // Skip insertion
+                END IF
+                SET currentNode to currentNode.nextNode
+            END WHILE
+
+            // Create new node
+            SET newNode to DataNode(course)
+
+            // Insert at head of chain
+            SET newNode.nextNode to buckets[index]
+            SET buckets[index] to newNode
+        END FOR
+
+        // Call sort() to ensure cached list is updated
+        CALL sort()
+    }
+
+
+    // Remove: Delete a course by courseName
+    remove(courseName: String) {
+        // Validate input: cannot remove null or empty course name
+        IF courseName is null OR empty THEN
+            PRINT "Unable to remove empty course!"
+            RETURN
+        END IF
+
+        // Compute bucket index using hash function
+        SET index to hash(courseName)
+
+        // Traverse chain to find the node
+        SET currentNode to buckets[index]
+        SET previous to null  // Track previous node for deletion
+
+        // Search through chain until node found or end reached
+        WHILE currentNode is not null
+            // Check if current node matches course name
+            IF currentNode.course.courseName equals courseName THEN
+                // Handle deletion based on position (head vs. middle)
+                IF previous is null THEN
+                    // Node is at head of chain: update bucket head
+                    SET buckets[index] to currentNode.nextNode
+                ELSE
+                    // Node is in middle: bypass it by linking previous to next
+                    SET previous.nextNode to currentNode.nextNode
+                END IF
+
+                // Free memory
+                DELETE currentNode
+
+                // Decrement size
+                DECREMENT size
+
+                // Update sortedCourses
+                CALL sort()
+
+                RETURN
+            END IF
+
+            // Move forward in chain
+            SET previous to currentNode
+            SET currentNode to currentNode.nextNode
+        END WHILE
+
+        // If loop ends, course not found
+        PRINT "Course not found: " + courseName
+    }
+
+    // Sort: Extract all courses, and sort by name; should be called whenever table is updated
+    sort() {
+        // Clear old list
+        DELETE sortedCourses
+
+        // Create new sorted list
+        INIT new list courseList
+
+        // Traverse all buckets and collect courses
+        FOR index from 0 to capacity - 1
+            SET currentNode to buckets[index]
+            WHILE currentNode is not null
+                APPEND currentNode.course to courseList
+                SET currentNode to currentNode.nextNode
+            END WHILE
+        END FOR
+
+        // Sort list using merge sort
+        CALL mergeSort(courseList)
+
+        // Assign to cached course list
+        SET sortedCourses to courseList
+    }
+
+    // Return sorted course list
+    getSorted(): List<Course> {
+        RETURN sortedCourses
+    }
+
+    // Get a course by name (search)
+    get(courseName: String): Course {
+        // Validate input
+        IF courseName is null OR empty THEN RETURN null
+
+        // Compute bucket index
+        SET index to hash(courseName)
+
+        // Traverse chain to find course
+        SET currentNode to buckets[index]
+
+        WHILE currentNode is not null
+            // Compare course names
+            IF currentNode.course.courseName equals courseName THEN
+                // Return the course object
+                RETURN currentNode.course
+            END IF
+            SET currentNode to currentNode.nextNode
+        END WHILE
+
+        // Not found ; return null
+        RETURN null
+    }
+
+    // DEBUG: Print all buckets for debugging
+    printAllBuckets() {
+        FOR index from 0 to capacity - 1
+            PRINT "Bucket " + index + ": "
+            SET currentNode to buckets[index]
+            WHILE currentNode is not null
+                PRINT currentNode.course.toString()
+                SET currentNode to currentNode.nextNode
+            END WHILE
+        END FOR
+    }
+}
+
+
+// Parses lines from String input into CourseBuilder and returns a constructed Course object
+Class LineParser {
+    // Splits unparsed line into list of Strings by delimiter
+    split(input: String, delimiter: String): List<String> {
+        // Check for null or empty arguments
+        IF input is null OR empty THEN RETURN empty list
+
+        // Default delimiter to comma for CSV
+        IF delimiter is null OR empty THEN SET delimiter to ","
+
+        // Initialize function variables
+        SET result to new empty List<String>
+        SET start to 0
+        SET length to length of input
+
+        // Loop through input and extract fields
+        WHILE start is less than length
+            SET index to start
+            WHILE index is less than length AND input[index] in not delimiter
+                INCREMENT index
+            END WHILE
+
+            // Extract substring from start to index and append to result list
+            SET substring to input[start, index]
+            APPEND substring to result
+
+            // Move start to next after delimiter
+            SET start to index + 1
+
+            // Check for and skip consecutive delimiter
+            WHILE start is less than length AND input[start] is delimiter
+                INCREMENT start
+            END WHILE
+        END WHILE
+
+        RETURN result
+    }
+
+
+    // Parses line from file into Course object and returns Course Object
+    parse(input: String, delimiter: String, lineNumber: Integer): Course {
+        // Get each string separated by delimiter
+        SET parts to split(input, delimiter)
+
+        IF length of parts is less than 2 THEN
+            PRINT "Invalid line format at line: " lineNumber
+            RETURN null
+        END IF
+
+        // Pass to CourseBuilder
+        SET course to CourseBuilder.builder(parts)
+
+        IF course is null THEN
+            PRINT "Failed to build course at line: " lineNumber
+            RETURN
+        END IF
+
+        RETURN course
+    }
+}
+
+
+// Reads course data from a file and loads it into the DataStructure
+Class FileReader {
+    // Reads file line by line and delegates parsing
+    readFile(dataStruct: DataStructure, fileName: String) {
+        // Validate filename
+        IF fileName is null OR fileName is empty THEN
+            PRINT "Invalid file name"
+            RETURN
+        END IF
+
+        // Try to open file for reading
+        TRY
+            OPEN file at path fileName FOR reading AS file
+        CATCH error
+            PRINT "Failed to open file: " fileName
+            RETURN
+        END TRY
+
+        // Initialize parser
+        SET parser to new LineParser
+
+        // Initialize temp list to store Course objects
+        INIT newCourses: List<Course>
+
+        // Track line numbers for diagnostics
+        SET lineNumber to 0
+
+        // Read file line by line
+        WHILE file has more lines
+            SET line to next line from file
+            INCREMENT lineNumber
+
+            // Skip null or empty lines
+            IF line is null OR line is empty THEN
+                CONTINUE
+            END IF
+
+            // Extract course from line, and set delimiter to comma assuming CSV
+            SET course to parser.parse(line, ",", lineNumber)
+
+            IF course is not null THEN
+                APPEND course to newCourses
+            END IF
+
+        END WHILE
+
+        // Close file to release resources
+        CLOSE file
+
+        // Build Data Structure
+        CALL dataStruct.inject(newCourses)
+
+        // Destroy temp list
+        DELETE newCourses
+
+        PRINT "Successfully read file: " + fileName
+    }
+}
+
+
+// Encapsulates static menu displays
+Class GUI {
+
+    printMenu {
+        PRINT
+        "=================================="
+        "     Welcome to ABC University    "
+        "=================================="
+        "Please select a menu option:"
+        "1) Load data to application"
+        "2) Display CS courses (alphanumeric)"
+        "3) Search for individual course"
+        "9) Quit application"
+        "----------------------------------"
+        "Enter your choice: "
+    }
+
+    printSearchMenu {
+        PRINT "Search Categories:"
+        PRINT "1) Course Name"
+        PRINT "2) Course Title"
+        PRINT "3) Prerequisite"
+        PRINT "Enter selection: "
+    }
+
+    promptSearchCriteria {
+        PRINT "Enter search text: "
+    }
+
+    printNoResults {
+        PRINT "No matching courses found."
+    }
+
+    printCourse(course: Course) {
+        IF course is null THEN
+            PRINT "Course does not exist"
+            RETURN
+        END IF
+        PRINT course.toString()
+    }
+
+    printCourseListHeader {
+        PRINT "-------- Course List --------"
+    }
+
+    printGoodbye {
+        PRINT "Exiting application..."
+    }
+
+    clearScreen() {
+        // Implement functionality to clear console screen
+    }
+
+    waitForInput() {
+        GET input from user
+        // Wait until Enter is pressed
+    }
+}
+
+
+// Encapsulates Menu Option functionality and handles user input of nested functionality
+Class Menu {
+    // Load data from file to memory
+    load(dataStruct: DataStructure, fileLocation: String) {
+        CALL GUI.printLoadStart(fileLocation)
+
+        // Get a String list of the lines from the input file
+        CALL FileReader.readFile(dataStruct, fileLocation)
+
+        CALL GUI.printLoadComplete
+    }
+
+    // Search for Course object from input criteria
+    search(dataStruct: DataStructure, criteria: String, category: String): List<Course> {
+        // Initialize list to return
+        SET results to new List<Course>
+
+        // Iterate through each index in the Data Structure
+        FOR index from 0 to (dataStruct.capacity - 1)
+            SET currentNode to dataStruct.buckets[index]
+
+            // Check for null node
+            WHILE currentNode is not null
+                // Check for matching course by given category
+                // Add matching courses to results list
+                CASE category is "name"
+                    IF currentNode.course.courseName equals criteria THEN
+                        APPEND currentNode.course to results
+                    END IF
+
+                CASE category is "title"
+                    IF currentNode.course.courseTitle contains criteria THEN
+                        APPEND currentNode.course to results
+                    END IF
+
+                CASE category is "prereq"
+                    FOR each req in currentNode.course.coursePrerequisites
+                        IF req equals criteria THEN
+                            APPEND currentNode.course to results
+                            BREAK
+                        END IF
+                    END FOR
+
+                END CASE
+
+                SET currentNode to currentNode.nextNode
+            END WHILE
+        END FOR
+
+        RETURN results
+    }
+
+    // Display all CS courses in alphanumeric order
+    displayCSCourses(dataStruct: DataStructure) {
+        CALL GUI.printCourseListHeader
+
+        // Get sorted courses
+        SET sortedCourses to dataStruct.getSorted()
+
+        // Filter for Computer Science courses (first 2 characters are "CS")
+        FOR each course in sortedCourses
+            IF first 2 characters of course.courseName equals "CS" THEN
+                CALL GUI.printCourse(course)
+            END IF
+        END FOR
+    }
+
+    // Display all courses in alphanumeric order
+    displayAllCourses(dataStruct: DataStructure) {
+        CALL GUI.printCourseListHeader
+
+        SET sortedCourses to dataStruct.getSorted()
+
+        FOR each course in sortedCourses
+            CALL GUI.printCourse(course)
+        END FOR
+    }
+
+    // Display list of courses
+    displayList(courses: List<Course>) {
+        CALL GUI.printCourseListHeader
+
+        FOR each course in courses
+            CALL GUI.printCourse(course)
+        END FOR
+    }
+}
+
+
+// Entry point of program
+Main {
+    SET CourseList to new DataStructure
+    SET SourceFile to "courses.csv"
+
+    WHILE user input is not "9"
+        CALL GUI.printMenu()
+        GET user choice
+
+        CASE user choice is "1" THEN
+            CALL GUI.clearScreen()
+            CALL Menu.load(CourseList, SourceFile)
+            PRINT "Press Enter to continue..."
+            CALL GUI.waitForInput()
+            CALL GUI.clearScreen()
+
+        CASE user choice is "2" THEN
+            CALL GUI.clearScreen()
+            CALL Menu.displayCSCourses(CourseList)
+            PRINT "Press Enter to continue..."
+            CALL GUI.waitForInput()
+            CALL GUI.clearScreen()
+
+        CASE user choice is "3" THEN
+            CALL GUI.clearScreen()
+            CALL Menu.searchIndividualCourse(CourseList)
+            PRINT "Press Enter to continue..."
+            CALL GUI.waitForInput()
+            CALL GUI.clearScreen()
+
+        CASE user choice is "9" THEN
+            CALL GUI.clearScreen()
+            CALL GUI.printGoodbye
+            PRINT "Press Enter to continue..."
+            CALL GUI.waitForInput()
+            RETURN null
+
+        DEFAULT
+            CALL GUI.clearScreen()
+            CALL GUI.printMenu()
+            PRINT "Invalid menu option. Please try again."
+    END WHILE
+}
